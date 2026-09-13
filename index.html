@@ -36,6 +36,7 @@ const dimensions=document.getElementById('dimensions');
 let source=null;
 let sourceName='image';
 let lastBlob=null;
+let previewUrl=null;
 
 amount.addEventListener('input',()=>amountValue.textContent=amount.value+'%');
 drop.addEventListener('click',()=>fileInput.click());
@@ -45,30 +46,55 @@ fileInput.addEventListener('change',e=>loadFile(e.target.files[0]));
 drop.addEventListener('drop',e=>loadFile(e.dataTransfer.files[0]));
 add.addEventListener('click',()=>process('add'));
 remove.addEventListener('click',()=>process('remove'));
-download.addEventListener('click',()=>{if(!lastBlob)return;const a=document.createElement('a');a.href=URL.createObjectURL(lastBlob);a.download=sourceName.replace(/\.[^.]+$/,'')+'-clipped.png';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)});
+download.addEventListener('click',()=>{if(!lastBlob)return;const a=document.createElement('a');const url=URL.createObjectURL(lastBlob);a.href=url;a.download=sourceName.replace(/\.[^.]+$/,'')+'-clipped.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
 
 function loadFile(file){
  if(!file||!file.type.startsWith('image/'))return;
  sourceName=file.name||'image';
  const reader=new FileReader();
- reader.onload=()=>{const img=new Image();img.onload=()=>{source=img;lastBlob=null;image.src=reader.result;image.hidden=false;placeholder.hidden=true;add.disabled=false;remove.disabled=false;download.disabled=true;dimensions.textContent=`${img.naturalWidth} × ${img.naturalHeight}px`};img.src=reader.result};reader.readAsDataURL(file);
+ reader.onload=()=>{const img=new Image();img.onload=()=>{source=img;lastBlob=null;setPreview(reader.result);add.disabled=false;remove.disabled=false;download.disabled=true;dimensions.textContent=`${img.naturalWidth} × ${img.naturalHeight}px`};img.onerror=()=>{source=null;lastBlob=null;add.disabled=true;remove.disabled=true;download.disabled=true};img.src=reader.result};
+ reader.readAsDataURL(file);
+}
+
+function setPreview(url){
+ if(previewUrl)URL.revokeObjectURL(previewUrl);
+ previewUrl=url;
+ image.src=url;
+ image.hidden=false;
+ placeholder.hidden=true;
+}
+
+function getTransformSize(mode,w,h,p){
+ if(!Number.isFinite(w)||!Number.isFinite(h)||w<1||h<1||!Number.isFinite(p)||p<0||p>0.5)return null;
+ const x=Math.round(w*p),y=Math.round(h*p);
+ if(mode==='add')return {x,y,width:w+x*2,height:h+y*2};
+ return {x,y,width:Math.max(1,w-x*2),height:Math.max(1,h-y*2)};
 }
 
 function process(mode){
  if(!source)return;
  const p=Number(amount.value)/100;
  const w=source.naturalWidth,h=source.naturalHeight;
+ const size=getTransformSize(mode,w,h,p);
+ if(!size)return;
  const canvas=document.createElement('canvas');
  const ctx=canvas.getContext('2d');
+ if(!ctx)return;
+ canvas.width=size.width;canvas.height=size.height;
  if(mode==='add'){
-  const x=Math.round(w*p),y=Math.round(h*p);
-  canvas.width=w+x*2;canvas.height=h+y*2;ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(source,x,y,w,h);
+  ctx.fillStyle='#fff';
+  ctx.fillRect(0,0,size.width,size.height);
+  ctx.drawImage(source,size.x,size.y,w,h);
  }else{
-  const x=Math.round(w*p),y=Math.round(h*p);
-  const cropW=Math.max(1,w-x*2),cropH=Math.max(1,h-y*2);
-  canvas.width=cropW;canvas.height=cropH;ctx.drawImage(source,x,y,cropW,cropH,0,0,cropW,cropH);
+  ctx.drawImage(source,size.x,size.y,size.width,size.height,0,0,size.width,size.height);
  }
- canvas.toBlob(blob=>{lastBlob=blob;image.src=URL.createObjectURL(blob);dimensions.textContent=`${canvas.width} × ${canvas.height}px`;download.disabled=false},'image/png');
+ canvas.toBlob(blob=>{
+  if(!blob)return;
+  lastBlob=blob;
+  setPreview(URL.createObjectURL(blob));
+  dimensions.textContent=`${canvas.width} × ${canvas.height}px`;
+  download.disabled=false;
+ },'image/png');
 }
 </script>
 </body>
